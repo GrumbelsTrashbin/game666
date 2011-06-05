@@ -198,6 +198,9 @@ class tile {
 		void simulate(tile* neighbour[3][3]) {}
 };
 
+SDL_Surface* tile::image[CACHE_IMAGES];
+SDL_Surface* tile::image_edge[CACHE_IMAGES_EDGES];
+SDL_Surface* tile::image_corner[CACHE_IMAGES_CORNERS];
 SDL_Color tile::color=make_color(128,128,128);
 render_engine tile::renderer=render_engine();
 int tile::priority=0;
