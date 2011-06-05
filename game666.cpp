@@ -35,9 +35,9 @@
 	#define TILE_HEIGHT TILE_SIZE
 #endif
 
-#define point	two_coords
-#define size	two_coords
-#define vector	two_coords
+//#define point	two_coords
+//#define size	two_coords
+//#define vector	two_coords
 
 int randint(int min, int max){
 	return rand() % (max-min+1)+min;
@@ -81,6 +81,10 @@ class two_coords {
 		two_coords() {}
 		two_coords(int x, int y) {this->x=x;this->y=y;}
 };
+
+typedef two_coords point;
+typedef two_coords size;
+typedef two_coords vector;
 
 SDL_Color make_color(Uint8 r, Uint8 g, Uint8 b) {
 	SDL_Color color;
@@ -143,19 +147,18 @@ struct render {
 };
 
 union tile_properties {
-	Uint8 prop1;
-	Uint8 prop2;
-	Uint8 prop3;
+	Uint16 all_props; //Supposed to be 12bit but dunno
+	struct {
+		Uint8 prop1; //Supposed to be 4bit but dunno
+		Uint8 prop2;
+		Uint8 prop3;
+	};
+	bool flag[12];
 };
-
-//class tile_properties
-//{
-//	public:
-//		union
-//}
 
 class tile {
 	public:
+		tile_properties props;
 		static int priority;
 		static render_engine renderer;
 		static SDL_Color color;
@@ -294,9 +297,9 @@ class game666 {
 			rect.x = rect.y = rand() % 21;
 			SDL_BlitSurface(data.texture, NULL, screen, &rect);
 			a_tile=new tile();
-			//vector offset;
-			//offset.x=offset.y=0;
-			//SDL_BlitSurface(a_tile->get_image(1, offset), NULL, screen, &rect);
+			vector offset;
+			offset.x=offset.y=0;
+			SDL_BlitSurface(a_tile->get_image(1, offset), NULL, screen, &rect);
 			SDL_Flip(screen);
 		}
 		void unload_data(std::string resource) {
