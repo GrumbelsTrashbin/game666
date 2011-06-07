@@ -1,71 +1,24 @@
 #include <iostream>
 #include <SDL/SDL.h>
 #include <SDL/SDL_image.h>
+#include <SDL/SDL_gfxPrimitives.h>
 #include <string>
 #include <math.h>
+#include <list>
 
-#ifndef CACHE_IMAGES
-	#define CACHE_IMAGES 8
-#endif
-#ifndef CACHE_IMAGES_EDGES
-	#define CACHE_IMAGES_EDGES CACHE_IMAGES/2
-#endif
-#ifndef CACHE_IMAGES_CORENRS
-	#define CACHE_IMAGES_CORNERS CACHE_IMAGES_EDGES/2
-#endif
-#ifndef FRAMERATE
-	#define FRAMERATE 30
-#endif
-#ifndef CHUNK_SIZE
-	#define CHUNK_SIZE 32
-#endif
-#ifndef CHUNK_WIDTH
-	#define CHUNK_WIDTH CHUNK_SIZE
-#endif
-#ifndef CHUNK_HEIGHT
-	#define CHUNK_HEIGHT CHUNK_SIZE
-#endif
-#ifndef TILE_SIZE
-	#define TILE_SIZE 24
-#endif
-#ifndef TILE_WIDTH
-	#define TILE_WIDTH TILE_SIZE
-#endif
-#ifndef TILE_HEIGHT
-	#define TILE_HEIGHT TILE_SIZE
-#endif
-
-//#define point	two_coords
-//#define size	two_coords
-//#define vector	two_coords
+#include "game666.h"
 
 int randint(int min, int max){
 	return rand() % (max-min+1)+min;
 }
-
-bool lock_fps(int framerate) { //Taken from Tenac on GameDev forums
-	static float lastTime = 0.0f;
-	float currentTime = SDL_GetTicks() * 0.001f;
-	if((currentTime - lastTime) > (1.0f / framerate))
-	{
-		lastTime = currentTime;
-		return true;
+void limit_fps(float framerate) {
+	static float last_time = 0.0f;
+	float current_time=SDL_GetTicks()*0.001f;
+	//printf("---------------\nTime difference: %f\nTarget time per frame: %f\nGonna sleep for: %f\n",current_time-last_time,(1.0f/framerate),(1.0f/framerate)-(current_time-last_time));
+	if((1.0f/framerate)-(current_time-last_time)>0) {
+		usleep(1000*1000*((1.0f/framerate)-(current_time-last_time)));
 	}
-	return false;
-}
-
-float limit_fps(int framerate) { //Taken from Tenac on GameDev forums
-	static float lastTime = 0.0f;
-	float delay=0.0f;
-	float currentTime = SDL_GetTicks() * 0.001f;
-	//printf("%f %f\n",currentTime-lastTime, 1.0f/framerate);
-	if((currentTime - lastTime) > (1.0f / framerate)) { delay=0; }
-	else { delay=((1.0f / framerate)-(currentTime - lastTime)); }
-	lastTime = currentTime;
-	//printf("%f\n", delay);
-	sleep(delay);
-	//printf("%f\n", delay);
-	return delay;
+	last_time=current_time;
 }
 
 SDL_Surface* load_image(std::string path) {
@@ -81,11 +34,12 @@ class two_coords {
 		two_coords() {}
 		two_coords(int x, int y) {this->x=x;this->y=y;}
 };
-
 typedef two_coords point;
 typedef two_coords size;
 typedef two_coords vector;
 
+typedef unsigned int tiletype;
+typedef short tile_variable;
 SDL_Color make_color(Uint8 r, Uint8 g, Uint8 b) {
 	SDL_Color color;
 	color.r=r;
@@ -93,7 +47,6 @@ SDL_Color make_color(Uint8 r, Uint8 g, Uint8 b) {
 	color.b=b;
 	return color;
 }
-
 SDL_Color multiply_color(SDL_Color in_color, float multiplier) {
 	SDL_Color out_color;
 	out_color.r=std::min(int(in_color.r*multiplier),255);
@@ -101,147 +54,164 @@ SDL_Color multiply_color(SDL_Color in_color, float multiplier) {
 	out_color.b=std::min(int(in_color.b*multiplier),255);
 	return out_color;
 }
+Uint32 uint_color(SDL_Surface* surface, SDL_Color color) {
+	return SDL_MapRGB(surface->format, color.r, color.g, color.b);
+}
+
+class rengine_params {
+	public:
+		float color_multiplier;
+		int value1;
+		int value2;
+		rengine_params() {
+			this->color_multiplier=1.0f;
+			this->value1=1.0;
+			this->value2=1.0;
+		}
+		rengine_params(float color_multiplier) {
+			this->color_multiplier=color_multiplier;
+			this->value1=1.0;
+			this->value2=1.0;
+		}
+		rengine_params(float color_multiplier, int value1) {
+			this->color_multiplier=color_multiplier;
+			this->value1=value1;
+			this->value2=1.0;
+		}
+		rengine_params(float color_multiplier, int value1, int value2) {
+			this->color_multiplier=color_multiplier;
+			this->value1=value1;
+			this->value2=value2;
+		}
+};
 
 class render_engine {
-	private:
-		float color_multiplier;
+	protected:
+		rengine_params params;
 	public:
-		render_engine()
-		{
-			this->color_multiplier=1.0f;
+		render_engine() {}
+		render_engine(rengine_params params) { this->params=params; }
+		void render(SDL_Surface* surface, SDL_Color color, vector offset) {
+			this->_render(surface, multiply_color(color,params.color_multiplier), offset);
 		}
-		render_engine(float color_multiplier)
-		{
-			this->color_multiplier=color_multiplier;
-		}
-		void render(SDL_Surface& surface, SDL_Color color, vector offset)
-		{
-			_render(surface, multiply_color(color,color_multiplier), offset);
-		}
-	private:
-		void _render(SDL_Surface& surface, SDL_Color color, vector offset) {}
+	protected:
+		virtual void _render(SDL_Surface* surface, SDL_Color color, vector offset) = 0;
 };
-
 class compound_render_engine: public render_engine {
 	private:
-		float color_multiplier;
-		static render_engine* renderers[0];
+		render_engine** engines;
+		int num_of_engines;
 	public:
-		compound_render_engine() { color_multiplier=1.0f; init_subengines(); }
-		compound_render_engine(float color_multiplier) { this->color_multiplier=color_multiplier; init_subengines(); }
-	private:
-		void init_subengines()
-		{
-
+		compound_render_engine(int num_of_engines, render_engine* engines[]) {
+			this->engines=engines;
+			this->num_of_engines=num_of_engines;
+		}
+		void render(SDL_Surface* surface, SDL_Color color, vector offset) {
+			for(int i=0; i<num_of_engines; i++) {
+				this->engines[i]->render(surface, color, offset);
+			}
 		}
 };
-
-struct render {
+namespace render {
 	class solid: public render_engine {
-		void _render(SDL_Surface* surface, SDL_Color color, vector offset)
-		{
+		public:
+			solid(rengine_params params) { this->params=params; }
+			void _render(SDL_Surface* surface, SDL_Color color, vector offset) {
 			Uint32 u_color=SDL_MapRGB(surface->format, color.r, color.g, color.b);
 			SDL_FillRect(surface, NULL, u_color);
 		}
 	};
-};
-
-union tile_properties {
-	Uint16 all_props; //Supposed to be 12bit but dunno
-	struct {
-		Uint8 prop1; //Supposed to be 4bit but dunno
-		Uint8 prop2;
-		Uint8 prop3;
-	};
-	bool flag[12];
-};
-
-class tile {
-	public:
-		tile_properties props;
-		static int priority;
-		static render_engine renderer;
-		static SDL_Color color;
-		static SDL_Surface* image[CACHE_IMAGES];
-		static SDL_Surface* image_edge[CACHE_IMAGES_EDGES];
-		static SDL_Surface* image_corner[CACHE_IMAGES_CORNERS];
-		//static
-		tile() {
-			//color=make_color(128,128,128);
-			//renderer=render_engine();
-			//priority=0;
-			size tile_size=size(TILE_WIDTH, TILE_HEIGHT);
-			this->render(tile_size);
-		}
-		static void render(size tile_size) {
-			Uint32 rmask, gmask, bmask, amask;
-			#if SDL_BYTEORDER == SDL_BIG_ENDIAN
-				rmask = 0xff000000;
-				gmask = 0x00ff0000;
-				bmask = 0x0000ff00;
-				amask = 0x000000ff;
-			#else
-				rmask = 0x000000ff;
-				gmask = 0x0000ff00;
-				bmask = 0x00ff0000;
-				amask = 0xff000000;
-			#endif
-			vector* offset=new vector(0,0);
-			for(int i=0; i<CACHE_IMAGES;i++)
-			{
-				image[i]=SDL_CreateRGBSurface(SDL_SWSURFACE, tile_size.x, tile_size.y, 32, rmask, gmask, bmask, amask); //new SDL_Surface(size.x,size.y);
-				renderer.render(*image[i], color, *offset);
+	class points: public render_engine {
+		public:
+			points(rengine_params params) { this->params=params; }
+			void _render(SDL_Surface* surface, SDL_Color color, vector offset) {
+				for(int i=0;i < params.value1;i++) {
+					printf("ok");
+					circleColor(surface, randint(0,surface->w), randint(0,surface->h), params.value2, uint_color(surface, color));
+				}
 			}
-		}
-		SDL_Surface* get_image(int variation, vector offset) {
-			if(offset.x||offset.y) { return image[variation % (CACHE_IMAGES)]; } //center
-			else if(offset.x&offset.y) { return image_corner[variation % (CACHE_IMAGES_CORNERS)]; } //corners
-			else { return image_edge[variation % (CACHE_IMAGES_EDGES)]; } //edges
-		}
-		void simulate(tile* neighbour[3][3]) {}
+	};
 };
 
-SDL_Surface* tile::image[CACHE_IMAGES];
-SDL_Surface* tile::image_edge[CACHE_IMAGES_EDGES];
-SDL_Surface* tile::image_corner[CACHE_IMAGES_CORNERS];
-SDL_Color tile::color=make_color(128,128,128);
-render_engine tile::renderer=render_engine();
-int tile::priority=0;
+class tile_type {
+	public:
+		SDL_Color color;
+		render_engine* engine;
+		tile_type() {}
+		tile_type(tile_factory* factory, SDL_Color color, render_engine* engine) {
+			this->color=color;
+			this->engine=engine;
+			factory->register_tiletype(this);
+		}
+};
 
+struct tile {
+	public:
+		tiletype type;
+		tile_variable var;
+};
 
-class concrete: public tile
-{
-
+class tile_factory {
+	private:
+		tiletype next_id;
+		std::list<tile_type*> tiletypes;
+	public:
+		tiletype register_tiletype(tile_type* new_type) {
+			tiletypes.push_front(new_type);
+			return ++next_id;
+		}
 };
 
 class chunk {
 	private:
-		tile terrain_tile [CHUNK_WIDTH][CHUNK_HEIGHT];
+		tile_factory* factory;
+		bool tile_exists(int x, int y) {
+			if((x>CHUNK_WIDTH)^(y>CHUNK_HEIGHT)^(x<0)^(y<0)) {return false;}
+			return true;
+		}
+	public:
+		tile terrain_tile[CHUNK_WIDTH][CHUNK_HEIGHT];
+		chunk(tile_factory* factory) {
+			this->factory=factory;
+		}
+		tile get_tile(int x, int y) {
+			if (tile_exists(x,y)) { return terrain_tile[x][y]; }
+			return terrain_tile[-1][-1];
+		}
+		bool set_tile(int x, int y, tile value) {
+			if (tile_exists(x,y)) { terrain_tile[x][y]=value; return true;}
+			return false;
+		}
+		bool set_tile_type(int x, int y, tiletype value) {
+			if (tile_exists(x,y)) { terrain_tile[x][y].type=value; return true;}
+			return false;
+		}
+		bool set_tile_var(int x, int y, tile_variable value) {
+			if (tile_exists(x,y)) { terrain_tile[x][y].var=value; return true;}
+			return false;
+		}
 };
 
-class gameData {
+class game_data {
 	public:
 		SDL_Surface* texture;
-		gameData() {};
-		int load(std::string path)
-		{
-			if((texture=load_image(path))==NULL) {return -1;}
-			return 0;
+		game_data() {};
+		bool load(std::string path) {
+			if((texture=load_image(path))==NULL) {return false;}
+			return true;
 		}
-		int unload()
-		{
+		bool unload() {
 			//Unload all data
 			SDL_FreeSurface(texture);
-			return 0;
+			return true;
 		}
-		int unload(std::string resource) {/*Unload given resource.*/return 0;}
+		bool unload(std::string resource) {/*Unload given resource.*/return false;}
 };
 
-class gameWorld {
+class game_world {
 	private:
 	public:
-		void simulate()
-		{
+		void simulate() {
 
 		}
 };
@@ -251,22 +221,20 @@ class game666 {
 		bool		running;
 		SDL_Event	event;
 		SDL_Surface*	screen;
-		gameData	data;
-		gameWorld*	world;
-		tile*		a_tile;
+		game_data	data;
+		game_world*	world;
 	public:
 		game666() {}
 		int run() {
 			screen = NULL;
-			this->initialize(point(160,120));
+			this->initialize(point(320,240));
 			this->load_data("all");
 			//Main loop
-			while(running)
-			{
+			while(running) {
+				limit_fps(FRAMERATE);
 				this->check_events();
 				this->simulate();
 				this->render();
-				limit_fps(FRAMERATE);
 				//sleep(limit_fps(FRAMERATE)*1.0);
 			}
 			return this->quit();
@@ -296,13 +264,16 @@ class game666 {
 			}
 		}
 		void render() {
-			SDL_Rect rect;
-			rect.x = rect.y = rand() % 21;
-			SDL_BlitSurface(data.texture, NULL, screen, &rect);
-			a_tile=new tile();
+			//SDL_Rect rect;
+			//rect.x = rect.y = rand() % 21;
+			//SDL_BlitSurface(data.texture, NULL, screen, &rect);
+			//a_tile=new tile();
 			vector offset;
-			offset.x=offset.y=0;
-			SDL_BlitSurface(a_tile->get_image(1, offset), NULL, screen, &rect);
+			//offset.x=offset.y=0;
+			//SDL_BlitSurface(a_tile->get_image(1, offset), NULL, screen, &rect);
+			//SDL_FillRect(screen, NULL, SDL_MapRGB(screen->format, 255,0,0));
+			render::points* a = new render::points(rengine_params(1.0f,20,2));
+			a->render(screen, make_color(100,200,100), offset);
 			SDL_Flip(screen);
 		}
 		void unload_data(std::string resource) {
