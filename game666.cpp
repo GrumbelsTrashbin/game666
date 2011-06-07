@@ -126,7 +126,6 @@ namespace render {
 			points(rengine_params params) { this->params=params; }
 			void _render(SDL_Surface* surface, SDL_Color color, vector offset) {
 				for(int i=0;i < params.value1;i++) {
-					printf("ok");
 					circleColor(surface, randint(0,surface->w), randint(0,surface->h), params.value2, uint_color(surface, color));
 				}
 			}
