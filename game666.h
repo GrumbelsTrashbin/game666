@@ -1,6 +1,5 @@
 #ifndef __GAME666_H__
 #define __GAME666_H__
-
 #include <iostream>
 #include <SDL/SDL.h>
 #include <SDL/SDL_image.h>
@@ -59,13 +58,7 @@ class compound_render_engine;
 class tile_type;
 struct tile;
 
-class tile_factory {
-	private:
-		tiletype next_id;
-		std::list<tile_type*> tiletypes;
-	public:
-		tiletype register_tiletype(tile_type* new_type);
-};
+class tile_factory;
 
 
 class chunk;

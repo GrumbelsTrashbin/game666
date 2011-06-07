@@ -1,7 +1,8 @@
 #include <iostream>
 #include <math.h>
 #include <string>
-#include <list>
+//#include <list>
+#include <vector>
 
 #include <SDL/SDL.h>
 #include <SDL/SDL_image.h>
@@ -150,6 +151,12 @@ class compound_render_engine: public render_engine {
 		void _render(SDL_Surface* surface, SDL_Color color, vector offset) {} //De-virtualize this or C++ won't let us create an instance
 };
 namespace render {
+	class nothing: public render_engine {
+		public:
+			nothing() {}
+			nothing(rengine_params params) { this->params=params; }
+			void _render(SDL_Surface* surface, SDL_Color color, vector offset) { }
+	};
 	class solid: public render_engine {
 		public:
 			solid(rengine_params params) { this->params=params; }
@@ -181,15 +188,64 @@ namespace render {
 	typedef compound_render_engine compound;
 }
 
+class tile_factory {
+	private:
+		tiletype next_id;
+		std::vector<tile_type*> tiletypes;
+	public:
+		tile_factory() { next_id=0; }
+		tiletype register_tiletype(tile_type* new_type);
+		tile_type* get_tiletype(tiletype n) {
+			if(n>tiletypes.size()) {return tiletypes.front(); /*So you better declare a null/air tiletype!*/}
+			return tiletypes[n];
+		}
+};
+
+class image_collection {
+	public:
+		SDL_Surface* image_center[CACHE_IMAGES];
+		SDL_Surface* image_edge[CACHE_IMAGES_EDGES];
+		SDL_Surface* image_corner[CACHE_IMAGES_CORNERS];
+};
+
 class tile_type {
 	public:
-		SDL_Color color;
+		image_collection* images;
+	protected:
 		render_engine* engine;
+	public:
 		tile_type() {}
-		tile_type(tile_factory* factory, SDL_Color color, render_engine* engine) {
-			this->color=color;
+		tile_type(tile_factory* factory, render_engine* engine) {
 			this->engine=engine;
 			factory->register_tiletype(this);
+			size* s = new size(TILE_WIDTH, TILE_HEIGHT);
+			this->render(engine, *s);
+			delete s;
+			//ERROR: Gets here, but doesn't get back out in case of second tile_type.
+		}
+		void render(render_engine* renderer, size tile_size) {
+			Uint32 rmask, gmask, bmask, amask;
+			#if SDL_BYTEORDER == SDL_BIG_ENDIAN
+				rmask = 0xff000000;
+				gmask = 0x00ff0000;
+				bmask = 0x0000ff00;
+				amask = 0x000000ff;
+			#else
+				rmask = 0x000000ff;
+				gmask = 0x0000ff00;
+				bmask = 0x00ff0000;
+				amask = 0xff000000;
+			#endif
+			vector* offset=new vector(0,0);
+			for(int i=0; i<CACHE_IMAGES;i++) {
+				images->image_center[i]=SDL_CreateRGBSurface(SDL_SWSURFACE, tile_size.x, tile_size.y, 32, rmask, gmask, bmask, amask); //new SDL_Surface(size.x,size.y);
+				renderer->render(images->image_center[i], *offset);
+			}
+		}
+		SDL_Surface* get_image(vector offset, int variation) {
+			if(offset.x||offset.y) { return images->image_center[variation % (CACHE_IMAGES)]; } //center
+			else if(offset.x&offset.y) { return images->image_corner[variation % (CACHE_IMAGES_CORNERS)]; } //corners
+			else { return images->image_edge[variation % (CACHE_IMAGES_EDGES)]; } //edges
 		}
 };
 
@@ -200,8 +256,8 @@ struct tile {
 };
 
 tiletype tile_factory::register_tiletype(tile_type* new_type) {
-  tiletypes.push_front(new_type);
-  return ++next_id;
+	tiletypes.push_back(new_type);
+	return ++next_id;
 }
 
 class chunk {
@@ -236,18 +292,26 @@ class chunk {
 
 class game_data {
 	public:
-		SDL_Surface* texture;
-		game_data() {};
-		bool load(std::string path) {
-			if((texture=load_image(path))==NULL) {return false;}
+		tile_factory* tileset;
+	public:
+		game_data() { tileset = new tile_factory(); }
+		bool load() {
+			//Air/null tile
+			new tile_type(tileset, new render::nothing());
+			//Grassy earth
+			render::solid* a = new render::solid(rengine_params(make_color(114,85,53)));
+			render::spots* b = new render::spots(rengine_params(make_color(100,200,100),1.0f,5,2));
+			render_engine* c[2] = {a, b};
+			render::compound* d = new render::compound(2,c);
+			new tile_type(tileset, d);
 			return true;
 		}
 		bool unload() {
-			//Unload all data
-			SDL_FreeSurface(texture);
-			return true;
+			return false;
 		}
-		bool unload(std::string resource) {/*Unload given resource.*/return false;}
+		tile_type* get_tiletype(int n) {
+			return tileset->get_tiletype(n);
+		};
 };
 
 class game_world {
@@ -270,14 +334,13 @@ class game666 {
 		int run() {
 			screen = NULL;
 			this->initialize(point(320,240));
-			this->load_data("all");
+			this->data.load();
 			//Main loop
 			while(running) {
 				limit_fps(FRAMERATE);
 				this->check_events();
 				this->simulate();
 				this->render();
-				//sleep(limit_fps(FRAMERATE)*1.0);
 			}
 			return this->quit();
 		}
@@ -289,6 +352,12 @@ class game666 {
 			SDL_Init(SDL_INIT_EVERYTHING);
 			screen = SDL_SetVideoMode(resolution.x, resolution.y, 32, SDL_HWSURFACE | SDL_DOUBLEBUF);
 		}
+		int quit() {
+			this->data.load();
+			SDL_FreeSurface(screen);
+			SDL_Quit();
+			return 0;
+		}
 		void check_events() {
 			while(SDL_PollEvent(&event)) {
 				if(event.type == SDL_QUIT) {running=false;}
@@ -298,28 +367,11 @@ class game666 {
 				}
 			}
 		}
-		void load_data(std::string resource) {
-			if(resource=="all") {
-				this->data.load("data/background.png");
-			}
-		}
 		void render() {
 			vector offset;
-			render::solid* a = new render::solid(rengine_params(make_color(114,85,53)));
-			render::spots* b = new render::spots(rengine_params(make_color(100,200,100),1.0f,5,2));
-			render_engine* c[2] = {a, b};
-			render::compound* d = new render::compound(c);
-			d->render(screen, offset);
+			offset.x=offset.y=0;
+			this->data.get_tiletype(0)->get_image(offset, 1);
 			SDL_Flip(screen);
-		}
-		void unload_data(std::string resource) {
-			this->data.unload();
-		}
-		int quit() {
-			this->unload_data("all");
-			SDL_FreeSurface(screen);
-			SDL_Quit();
-			return 0;
 		}
 };
 
