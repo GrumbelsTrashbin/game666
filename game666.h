@@ -40,7 +40,7 @@
 #endif
 
 int randint(int min, int max);
-void limit_fps(int framerate);
+void limit_fps(float framerate);
 SDL_Surface* load_image(std::string path);
 
 class two_coords;
