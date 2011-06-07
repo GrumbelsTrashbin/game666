@@ -131,7 +131,7 @@ namespace render {
 				}
 			}
 	};
-};
+}
 
 class tile_type {
 	public:
