@@ -1,3 +1,6 @@
+#ifndef __GAME666_H__
+#define __GAME666_H__
+
 #include <iostream>
 #include <SDL/SDL.h>
 #include <SDL/SDL_image.h>
@@ -52,13 +55,23 @@ SDL_Color make_color(Uint8 r, Uint8 g, Uint8 b);
 SDL_Color multiply_color(SDL_Color in_color, float multiplier);
 
 class render_engine;
-class compound_render_engine: public render_engine;
-namespace render;
+class compound_render_engine;
 class tile_type;
 struct tile;
-class tile_factory;
+
+class tile_factory {
+	private:
+		tiletype next_id;
+		std::list<tile_type*> tiletypes;
+	public:
+		tiletype register_tiletype(tile_type* new_type);
+};
+
+
 class chunk;
 class game_data;
 class game_world;
 class game666;
 int main(int argc, char** argv);
+
+#endif

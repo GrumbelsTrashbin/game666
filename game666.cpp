@@ -151,16 +151,10 @@ struct tile {
 		tile_variable var;
 };
 
-class tile_factory {
-	private:
-		tiletype next_id;
-		std::list<tile_type*> tiletypes;
-	public:
-		tiletype register_tiletype(tile_type* new_type) {
-			tiletypes.push_front(new_type);
-			return ++next_id;
-		}
-};
+tiletype tile_factory::register_tiletype(tile_type* new_type) {
+  tiletypes.push_front(new_type);
+  return ++next_id;
+}
 
 class chunk {
 	private:
