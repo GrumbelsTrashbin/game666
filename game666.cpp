@@ -1,10 +1,11 @@
 #include <iostream>
+#include <math.h>
+#include <string>
+#include <list>
+
 #include <SDL/SDL.h>
 #include <SDL/SDL_image.h>
 #include <SDL/SDL_gfxPrimitives.h>
-#include <string>
-#include <math.h>
-#include <list>
 
 #include "game666.h"
 
@@ -63,6 +64,7 @@ class rengine_params {
 		float color_multiplier;
 		int value1;
 		int value2;
+		SDL_Color color;
 		rengine_params() {
 			this->color_multiplier=1.0f;
 			this->value1=1.0;
@@ -83,6 +85,31 @@ class rengine_params {
 			this->value1=value1;
 			this->value2=value2;
 		}
+		rengine_params(SDL_Color color) {
+			this->color=color;
+			this->color_multiplier=1.0f;
+			this->value1=1.0;
+			this->value2=1.0;
+		}
+		rengine_params(SDL_Color color, float color_multiplier) {
+			this->color=color;
+			this->color_multiplier=color_multiplier;
+			this->value1=1.0;
+			this->value2=1.0;
+		}
+		rengine_params(SDL_Color color, float color_multiplier, int value1) {
+			this->color=color;
+			this->color_multiplier=color_multiplier;
+			this->value1=value1;
+			this->value2=1.0;
+		}
+		rengine_params(SDL_Color color, float color_multiplier, int value1, int value2) {
+			this->color=color;
+			this->color_multiplier=color_multiplier;
+			this->value1=value1;
+			this->value2=value2;
+		}
+
 };
 
 class render_engine {
@@ -91,6 +118,9 @@ class render_engine {
 	public:
 		render_engine() {}
 		render_engine(rengine_params params) { this->params=params; }
+		void render(SDL_Surface* surface, vector offset) {
+			this->_render(surface, multiply_color(this->params.color,params.color_multiplier), offset);
+		}
 		void render(SDL_Surface* surface, SDL_Color color, vector offset) {
 			this->_render(surface, multiply_color(color,params.color_multiplier), offset);
 		}
@@ -106,30 +136,49 @@ class compound_render_engine: public render_engine {
 			this->engines=engines;
 			this->num_of_engines=num_of_engines;
 		}
+		void render(SDL_Surface* surface, vector offset) {
+			for(int i=0; i<num_of_engines; i++) {
+				this->engines[i]->render(surface, offset);
+			}
+		}
 		void render(SDL_Surface* surface, SDL_Color color, vector offset) {
 			for(int i=0; i<num_of_engines; i++) {
 				this->engines[i]->render(surface, color, offset);
 			}
 		}
+	private:
+		void _render(SDL_Surface* surface, SDL_Color color, vector offset) {} //De-virtualize this or C++ won't let us create an instance
 };
 namespace render {
 	class solid: public render_engine {
 		public:
 			solid(rengine_params params) { this->params=params; }
 			void _render(SDL_Surface* surface, SDL_Color color, vector offset) {
-			Uint32 u_color=SDL_MapRGB(surface->format, color.r, color.g, color.b);
-			SDL_FillRect(surface, NULL, u_color);
-		}
+				Uint32 u_color=SDL_MapRGB(surface->format, color.r, color.g, color.b);
+				//Uint32 u_color=uint_color(surface, color);
+				SDL_FillRect(surface, NULL, u_color);
+			}
 	};
-	class points: public render_engine {
+	class rings: public render_engine {
 		public:
-			points(rengine_params params) { this->params=params; }
+			rings(rengine_params params) { this->params=params; }
 			void _render(SDL_Surface* surface, SDL_Color color, vector offset) {
 				for(int i=0;i < params.value1;i++) {
-					circleColor(surface, randint(0,surface->w), randint(0,surface->h), params.value2, uint_color(surface, color));
+					circleRGBA(surface, randint(0,surface->w), randint(0,surface->h), params.value2, color.r, color.g, color.b, 255);
 				}
 			}
 	};
+	class spots: public render_engine {
+		public:
+			spots(rengine_params params) { this->params=params; }
+			void _render(SDL_Surface* surface, SDL_Color color, vector offset) {
+				//Uint32 u_color=SDL_MapRGB(surface->format, 255, 255, 255);
+				for(int i=0;i < params.value1;i++) {
+					filledCircleRGBA(surface, randint(0,surface->w), randint(0,surface->h), params.value2, color.r, color.g, color.b, 255); //uint_color(surface, color)
+				}
+			}
+	};
+	typedef compound_render_engine compound;
 }
 
 class tile_type {
@@ -241,8 +290,7 @@ class game666 {
 			screen = SDL_SetVideoMode(resolution.x, resolution.y, 32, SDL_HWSURFACE | SDL_DOUBLEBUF);
 		}
 		void check_events() {
-			while(SDL_PollEvent(&event))
-			{
+			while(SDL_PollEvent(&event)) {
 				if(event.type == SDL_QUIT) {running=false;}
 				else if(event.type == SDL_KEYDOWN)
 				{
@@ -251,22 +299,17 @@ class game666 {
 			}
 		}
 		void load_data(std::string resource) {
-			if(resource=="all")
-			{
+			if(resource=="all") {
 				this->data.load("data/background.png");
 			}
 		}
 		void render() {
-			//SDL_Rect rect;
-			//rect.x = rect.y = rand() % 21;
-			//SDL_BlitSurface(data.texture, NULL, screen, &rect);
-			//a_tile=new tile();
 			vector offset;
-			//offset.x=offset.y=0;
-			//SDL_BlitSurface(a_tile->get_image(1, offset), NULL, screen, &rect);
-			//SDL_FillRect(screen, NULL, SDL_MapRGB(screen->format, 255,0,0));
-			render::points* a = new render::points(rengine_params(1.0f,20,2));
-			a->render(screen, make_color(100,200,100), offset);
+			render::solid* a = new render::solid(rengine_params(make_color(114,85,53)));
+			render::spots* b = new render::spots(rengine_params(make_color(100,200,100),1.0f,5,2));
+			render_engine* c[2] = {a, b};
+			render::compound* d = new render::compound(c);
+			d->render(screen, offset);
 			SDL_Flip(screen);
 		}
 		void unload_data(std::string resource) {
